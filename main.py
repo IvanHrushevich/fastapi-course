@@ -1,8 +1,14 @@
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
 app = FastAPI()
 
 BALANCE = {}
+
+class OperationRequest(BaseModel):
+    wallet_name: str
+    amount: float
+    description: str | None = None
 
 @app.get("/balance")
 def get_balance(wallet_name: str | None = None):
@@ -17,14 +23,77 @@ def get_balance(wallet_name: str | None = None):
     return {"wallet": wallet_name, "balance": BALANCE[wallet_name]}
 
 @app.post("/wallets/{name}")
-def receive_money(name: str, amount: int):
-    if name not in BALANCE:
-        BALANCE[name] = 0
+def create_wallet(name: str, initial_balance: float = 0):
+    if name in BALANCE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Wallet: '{name}' already exists"
+        )
 
-    BALANCE[name] += amount
+    if initial_balance < 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Amount: '{initial_balance}' must be positive"
+        )
+
+    BALANCE[name] = initial_balance
 
     return {
-        "message": f"Added {amount} to {name}",
+        "message": f"Wallet: '{name}' created",
         "wallet": name,
-        "new_balance": BALANCE[name]
+        "balance": BALANCE[name]
+    }
+
+@app.post('/operations/income')
+def add_income(operation: OperationRequest):
+    if operation.wallet_name not in BALANCE:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Wallet: '{operation.wallet_name}' not found"
+        )
+
+    if operation.amount < 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Amount: '{operation.amount}' must be positive"
+        )
+
+    BALANCE[operation.wallet_name] += operation.amount
+
+    return {
+        "message": f"Income: '{operation.wallet_name}' added",
+        "wallet": operation.wallet_name,
+        "amount": operation.amount,
+        "description": operation.description,
+        "balance": BALANCE[operation.wallet_name]
+    }
+
+@app.post('/operations/expense')
+def add_expense(operation: OperationRequest):
+    if operation.wallet_name not in BALANCE:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Wallet: '{operation.wallet_name}' not found"
+        )
+
+    if operation.amount < 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Amount: '{operation.amount}' must be positive"
+        )
+
+    if operation.amount > BALANCE[operation.wallet_name]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Insufficient funds. Available: {BALANCE[operation.wallet_name]}"
+        )
+
+    BALANCE[operation.wallet_name] -= operation.amount
+
+    return {
+        "message": f"Expense: '{operation.wallet_name}' added",
+        "wallet": operation.wallet_name,
+        "amount": operation.amount,
+        "description": operation.description,
+        "balance": BALANCE[operation.wallet_name]
     }
